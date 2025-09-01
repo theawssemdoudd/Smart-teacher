@@ -1,1 +1,3 @@
-pip install streamlit transformers torch
+streamlit 
+transformers
+torch
