@@ -1,31 +1,42 @@
-import streamlit as st
-from transformers import pipeline
+import re
+import os
+import subprocess
+from fastapi import FastAPI, Query
+from fastapi.responses import JSONResponse
+from youtube_transcript_api import YouTubeTranscriptApi
+import whisper
 
-# 1) تحميل نموذج جاهز من Hugging Face (يمكن تغييره لاحقاً لنموذج أقوى أو خاص)
-qa_pipeline = pipeline("text2text-generation", model="google/flan-t5-base")
+app = FastAPI()
 
-# 2) واجهة المستخدم
-st.set_page_config(page_title="المعلم الذكي", page_icon="📘", layout="centered")
+# تحميل نموذج Whisper (small أسرع من base/large)
+model = whisper.load_model("small")
 
-st.title("📘 المعلم الذكي بالذكاء الصناعي")
-st.write("اسأل أي سؤال في الرياضيات، الفيزياء أو أي مادة، وسأجيبك كمعلم خصوصي.")
+def download_audio(video_url, out_name="audio.wav"):
+    """تنزيل الصوت من يوتيوب وتحويله إلى wav"""
+    cmd = f'yt-dlp -f bestaudio -x --audio-format wav -o "{out_name}" "{video_url}"'
+    subprocess.run(cmd, shell=True, check=True)
+    return out_name
 
-# إدخال سؤال الطالب
-question = st.text_area("✍️ اكتب سؤالك هنا:")
+@app.get("/transcribe")
+async def transcribe(url: str = Query(..., description="رابط فيديو يوتيوب")):
+    try:
+        # استخراج video id
+        m = re.search(r"(?:v=|\/youtu\.be\/)([A-Za-z0-9_\-]{6,})", url)
+        if not m:
+            return JSONResponse(content={"error": "رابط غير صالح"}, status_code=400)
+        video_id = m.group(1)
 
-if st.button("إجابة"):
-    if question.strip():
-        with st.spinner("⏳ جاري التفكير..."):
-            # 3) توليد الإجابة
-            response = qa_pipeline(question, max_length=200, num_return_sequences=1)
-            answer = response[0]['generated_text']
+        # 1. حاول transcript جاهز من يوتيوب
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
+            text = " ".join([t['text'] for t in transcript])
+            return {"source": "youtube_transcript", "text": text}
+        except:
+            # 2. إذا ما فيش → نستعمل Whisper
+            audio_path = download_audio(url, "audio.wav")
+            result = model.transcribe(audio_path)
+            text = result.get("text", "")
+            return {"source": "whisper", "text": text}
 
-            # 4) عرض الإجابة
-            st.subheader("✅ الإجابة:")
-            st.write(answer)
-
-            # 5) اقتراح تمرين إضافي
-            st.subheader("📝 تمرين إضافي لك:")
-            st.write(f"جرّب حل سؤال مشابه: {question} لكن بأرقام أو معطيات مختلفة.")
-    else:
-        st.warning("من فضلك اكتب سؤالاً أولاً.")
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
