@@ -1,5 +1,6 @@
+torch==2.0.1
+openai-whisper
 fastapi
 uvicorn
 yt-dlp
 youtube-transcript-api
-git+https://github.com/guillaumekln/whisper.cpp.git
