@@ -2,5 +2,4 @@ fastapi
 uvicorn
 yt-dlp
 youtube-transcript-api
-git+https://github.com/openai/whisper.git
-torch
+git+https://github.com/guillaumekln/whisper.cpp.git
